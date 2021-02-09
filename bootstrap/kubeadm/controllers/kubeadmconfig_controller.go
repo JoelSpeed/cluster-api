@@ -34,6 +34,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1alpha4"
 	"sigs.k8s.io/cluster-api/bootstrap/kubeadm/internal/cloudinit"
+	"sigs.k8s.io/cluster-api/bootstrap/kubeadm/internal/ignition"
 	"sigs.k8s.io/cluster-api/bootstrap/kubeadm/internal/locking"
 	kubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 	bsutil "sigs.k8s.io/cluster-api/bootstrap/util"
@@ -440,6 +441,11 @@ func (r *KubeadmConfigReconciler) handleClusterNotInitialized(ctx context.Contex
 	var cloudInitData []byte
 
 	switch bootstrapDataFormat(scope.Config.Spec) {
+	case bootstrapv1.Ignition:
+		cloudInitData, err = ignition.NewInitControlPlane(&ignition.ControlPlaneInput{
+			ControlPlaneInput: controlPlaneInput,
+			IgnitionConfig:    scope.Config.Spec.IgnitionConfig,
+		})
 	default:
 		cloudInitData, err = cloudinit.NewInitControlPlane(controlPlaneInput)
 	}
@@ -522,6 +528,11 @@ func (r *KubeadmConfigReconciler) joinWorker(ctx context.Context, scope *Scope) 
 	var cloudJoinData []byte
 
 	switch bootstrapDataFormat(scope.Config.Spec) {
+	case bootstrapv1.Ignition:
+		cloudJoinData, err = ignition.NewNode(&ignition.NodeInput{
+			NodeInput:      nodeInput,
+			IgnitionConfig: scope.Config.Spec.IgnitionConfig,
+		})
 	default:
 		cloudJoinData, err = cloudinit.NewNode(nodeInput)
 	}
@@ -608,6 +619,11 @@ func (r *KubeadmConfigReconciler) joinControlplane(ctx context.Context, scope *S
 	var cloudJoinData []byte
 
 	switch bootstrapDataFormat(scope.Config.Spec) {
+	case bootstrapv1.Ignition:
+		cloudJoinData, err = ignition.NewJoinControlPlane(&ignition.ControlPlaneJoinInput{
+			ControlPlaneJoinInput: controlPlaneJoinInput,
+			IgnitionConfig:        scope.Config.Spec.IgnitionConfig,
+		})
 	default:
 		cloudJoinData, err = cloudinit.NewJoinControlPlane(controlPlaneJoinInput)
 	}
@@ -902,5 +918,9 @@ func (r *KubeadmConfigReconciler) storeBootstrapData(ctx context.Context, scope 
 }
 
 func bootstrapDataFormat(spec bootstrapv1.KubeadmConfigSpec) bootstrapv1.Format {
+	if spec.IgnitionConfig != nil {
+		return bootstrapv1.Ignition
+	}
+
 	return spec.Format
 }
