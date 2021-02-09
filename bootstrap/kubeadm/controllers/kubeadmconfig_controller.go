@@ -437,7 +437,13 @@ func (r *KubeadmConfigReconciler) handleClusterNotInitialized(ctx context.Contex
 		Certificates:         certificates,
 	}
 
-	cloudInitData, err := cloudinit.NewInitControlPlane(controlPlaneInput)
+	var cloudInitData []byte
+
+	switch bootstrapDataFormat(scope.Config.Spec) {
+	default:
+		cloudInitData, err = cloudinit.NewInitControlPlane(controlPlaneInput)
+	}
+
 	if err != nil {
 		scope.Error(err, "Failed to generate cloud init for bootstrap control plane")
 		return ctrl.Result{}, err
@@ -513,7 +519,13 @@ func (r *KubeadmConfigReconciler) joinWorker(ctx context.Context, scope *Scope) 
 		JoinConfiguration: joinData,
 	}
 
-	cloudJoinData, err := cloudinit.NewNode(nodeInput)
+	var cloudJoinData []byte
+
+	switch bootstrapDataFormat(scope.Config.Spec) {
+	default:
+		cloudJoinData, err = cloudinit.NewNode(nodeInput)
+	}
+
 	if err != nil {
 		scope.Error(err, "Failed to create a worker join configuration")
 		return ctrl.Result{}, err
@@ -593,7 +605,13 @@ func (r *KubeadmConfigReconciler) joinControlplane(ctx context.Context, scope *S
 		},
 	}
 
-	cloudJoinData, err := cloudinit.NewJoinControlPlane(controlPlaneJoinInput)
+	var cloudJoinData []byte
+
+	switch bootstrapDataFormat(scope.Config.Spec) {
+	default:
+		cloudJoinData, err = cloudinit.NewJoinControlPlane(controlPlaneJoinInput)
+	}
+
 	if err != nil {
 		scope.Error(err, "Failed to create a control plane join configuration")
 		return ctrl.Result{}, err
@@ -880,4 +898,8 @@ func (r *KubeadmConfigReconciler) storeBootstrapData(ctx context.Context, scope 
 	scope.Config.Status.Ready = true
 	conditions.MarkTrue(scope.Config, bootstrapv1.DataSecretAvailableCondition)
 	return nil
+}
+
+func bootstrapDataFormat(spec bootstrapv1.KubeadmConfigSpec) bootstrapv1.Format {
+	return spec.Format
 }
