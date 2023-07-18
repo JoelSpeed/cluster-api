@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package webhooks
 
 import (
 	"testing"
@@ -23,30 +23,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	utildefaulting "sigs.k8s.io/cluster-api/util/defaulting"
 )
 
 func TestMachineSetDefault(t *testing.T) {
 	g := NewWithT(t)
-	ms := &MachineSet{
+	machineSet := &clusterv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-ms",
 		},
-		Spec: MachineSetSpec{
-			Template: MachineTemplateSpec{
-				Spec: MachineSpec{
+		Spec: clusterv1.MachineSetSpec{
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
 					Version: pointer.String("1.19.10"),
 				},
 			},
 		},
 	}
+	ms := &MachineSet{machineSet}
+
 	t.Run("for MachineSet", utildefaulting.DefaultValidateTest(ms))
 	ms.Default()
 
-	g.Expect(ms.Labels[ClusterNameLabel]).To(Equal(ms.Spec.ClusterName))
-	g.Expect(ms.Spec.DeletePolicy).To(Equal(string(RandomMachineSetDeletePolicy)))
-	g.Expect(ms.Spec.Selector.MatchLabels).To(HaveKeyWithValue(MachineSetNameLabel, "test-ms"))
-	g.Expect(ms.Spec.Template.Labels).To(HaveKeyWithValue(MachineSetNameLabel, "test-ms"))
+	g.Expect(ms.Labels[clusterv1.ClusterNameLabel]).To(Equal(ms.Spec.ClusterName))
+	g.Expect(ms.Spec.DeletePolicy).To(Equal(string(clusterv1.RandomMachineSetDeletePolicy)))
+	g.Expect(ms.Spec.Selector.MatchLabels).To(HaveKeyWithValue(clusterv1.MachineSetNameLabel, "test-ms"))
+	g.Expect(ms.Spec.Template.Labels).To(HaveKeyWithValue(clusterv1.MachineSetNameLabel, "test-ms"))
 	g.Expect(*ms.Spec.Template.Spec.Version).To(Equal("v1.19.10"))
 }
 
@@ -92,18 +95,19 @@ func TestMachineSetLabelSelectorMatchValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			ms := &MachineSet{
-				Spec: MachineSetSpec{
+			machineSet := &clusterv1.MachineSet{
+				Spec: clusterv1.MachineSetSpec{
 					Selector: metav1.LabelSelector{
 						MatchLabels: tt.selectors,
 					},
-					Template: MachineTemplateSpec{
-						ObjectMeta: ObjectMeta{
+					Template: clusterv1.MachineTemplateSpec{
+						ObjectMeta: clusterv1.ObjectMeta{
 							Labels: tt.labels,
 						},
 					},
 				},
 			}
+			ms := &MachineSet{machineSet}
 
 			if tt.expectErr {
 				warnings, err := ms.ValidateCreate()
@@ -149,19 +153,19 @@ func TestMachineSetClusterNameImmutable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			newMS := &MachineSet{
-				Spec: MachineSetSpec{
+			newMS := &clusterv1.MachineSet{
+				Spec: clusterv1.MachineSetSpec{
 					ClusterName: tt.newClusterName,
 				},
 			}
 
-			oldMS := &MachineSet{
-				Spec: MachineSetSpec{
+			oldMS := &clusterv1.MachineSet{
+				Spec: clusterv1.MachineSetSpec{
 					ClusterName: tt.oldClusterName,
 				},
 			}
 
-			warnings, err := newMS.ValidateUpdate(oldMS)
+			warnings, err := (&MachineSet{newMS}).ValidateUpdate(&MachineSet{oldMS})
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -209,28 +213,29 @@ func TestMachineSetVersionValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			md := &MachineSet{
-				Spec: MachineSetSpec{
-					Template: MachineTemplateSpec{
-						Spec: MachineSpec{
+			machineSet := &clusterv1.MachineSet{
+				Spec: clusterv1.MachineSetSpec{
+					Template: clusterv1.MachineTemplateSpec{
+						Spec: clusterv1.MachineSpec{
 							Version: pointer.String(tt.version),
 						},
 					},
 				},
 			}
+			ms := &MachineSet{machineSet}
 
 			if tt.expectErr {
-				warnings, err := md.ValidateCreate()
+				warnings, err := ms.ValidateCreate()
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(warnings).To(BeEmpty())
-				warnings, err = md.ValidateUpdate(md)
+				warnings, err = ms.ValidateUpdate(ms)
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(warnings).To(BeEmpty())
 			} else {
-				warnings, err := md.ValidateCreate()
+				warnings, err := ms.ValidateCreate()
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(warnings).To(BeEmpty())
-				warnings, err = md.ValidateUpdate(md)
+				warnings, err = ms.ValidateUpdate(ms)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(warnings).To(BeEmpty())
 			}
@@ -241,20 +246,20 @@ func TestMachineSetVersionValidation(t *testing.T) {
 func TestValidateSkippedMachineSetPreflightChecks(t *testing.T) {
 	tests := []struct {
 		name      string
-		ms        *MachineSet
+		ms        *clusterv1.MachineSet
 		expectErr bool
 	}{
 		{
 			name:      "should pass if the machine set skip preflight checks annotation is not set",
-			ms:        &MachineSet{},
+			ms:        &clusterv1.MachineSet{},
 			expectErr: false,
 		},
 		{
 			name: "should pass if not preflight checks are skipped",
-			ms: &MachineSet{
+			ms: &clusterv1.MachineSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						MachineSetSkipPreflightChecksAnnotation: "",
+						clusterv1.MachineSetSkipPreflightChecksAnnotation: "",
 					},
 				},
 			},
@@ -262,10 +267,10 @@ func TestValidateSkippedMachineSetPreflightChecks(t *testing.T) {
 		},
 		{
 			name: "should pass if only valid preflight checks are skipped (single)",
-			ms: &MachineSet{
+			ms: &clusterv1.MachineSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						MachineSetSkipPreflightChecksAnnotation: string(MachineSetPreflightCheckKubeadmVersionSkew),
+						clusterv1.MachineSetSkipPreflightChecksAnnotation: string(clusterv1.MachineSetPreflightCheckKubeadmVersionSkew),
 					},
 				},
 			},
@@ -273,10 +278,10 @@ func TestValidateSkippedMachineSetPreflightChecks(t *testing.T) {
 		},
 		{
 			name: "should pass if only valid preflight checks are skipped (multiple)",
-			ms: &MachineSet{
+			ms: &clusterv1.MachineSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						MachineSetSkipPreflightChecksAnnotation: string(MachineSetPreflightCheckKubeadmVersionSkew) + "," + string(MachineSetPreflightCheckControlPlaneIsStable),
+						clusterv1.MachineSetSkipPreflightChecksAnnotation: string(clusterv1.MachineSetPreflightCheckKubeadmVersionSkew) + "," + string(clusterv1.MachineSetPreflightCheckControlPlaneIsStable),
 					},
 				},
 			},
@@ -284,10 +289,10 @@ func TestValidateSkippedMachineSetPreflightChecks(t *testing.T) {
 		},
 		{
 			name: "should fail if invalid preflight checks are skipped",
-			ms: &MachineSet{
+			ms: &clusterv1.MachineSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						MachineSetSkipPreflightChecksAnnotation: string(MachineSetPreflightCheckKubeadmVersionSkew) + ",invalid-preflight-check-name",
+						clusterv1.MachineSetSkipPreflightChecksAnnotation: string(clusterv1.MachineSetPreflightCheckKubeadmVersionSkew) + ",invalid-preflight-check-name",
 					},
 				},
 			},

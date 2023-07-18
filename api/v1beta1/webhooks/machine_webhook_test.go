@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package webhooks
 
 import (
 	"testing"
@@ -24,25 +24,28 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	utildefaulting "sigs.k8s.io/cluster-api/util/defaulting"
 )
 
 func TestMachineDefault(t *testing.T) {
 	g := NewWithT(t)
 
-	m := &Machine{
+	machine := &capiv1beta1.Machine{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "foobar",
 		},
-		Spec: MachineSpec{
-			Bootstrap: Bootstrap{ConfigRef: &corev1.ObjectReference{}},
+		Spec: capiv1beta1.MachineSpec{
+			Bootstrap: capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{}},
 			Version:   pointer.String("1.17.5"),
 		},
 	}
+	m := &Machine{machine}
+
 	t.Run("for Machine", utildefaulting.DefaultValidateTest(m))
 	m.Default()
 
-	g.Expect(m.Labels[ClusterNameLabel]).To(Equal(m.Spec.ClusterName))
+	g.Expect(m.Labels[capiv1beta1.ClusterNameLabel]).To(Equal(m.Spec.ClusterName))
 	g.Expect(m.Spec.Bootstrap.ConfigRef.Namespace).To(Equal(m.Namespace))
 	g.Expect(m.Spec.InfrastructureRef.Namespace).To(Equal(m.Namespace))
 	g.Expect(*m.Spec.Version).To(Equal("v1.17.5"))
@@ -52,22 +55,22 @@ func TestMachineDefault(t *testing.T) {
 func TestMachineBootstrapValidation(t *testing.T) {
 	tests := []struct {
 		name      string
-		bootstrap Bootstrap
+		bootstrap capiv1beta1.Bootstrap
 		expectErr bool
 	}{
 		{
 			name:      "should return error if configref and data are nil",
-			bootstrap: Bootstrap{ConfigRef: nil, DataSecretName: nil},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: nil, DataSecretName: nil},
 			expectErr: true,
 		},
 		{
 			name:      "should not return error if dataSecretName is set",
-			bootstrap: Bootstrap{ConfigRef: nil, DataSecretName: pointer.String("test")},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: nil, DataSecretName: pointer.String("test")},
 			expectErr: false,
 		},
 		{
 			name:      "should not return error if config ref is set",
-			bootstrap: Bootstrap{ConfigRef: &corev1.ObjectReference{}, DataSecretName: nil},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{}, DataSecretName: nil},
 			expectErr: false,
 		},
 	}
@@ -75,9 +78,10 @@ func TestMachineBootstrapValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			m := &Machine{
-				Spec: MachineSpec{Bootstrap: tt.bootstrap},
+			machine := &capiv1beta1.Machine{
+				Spec: capiv1beta1.MachineSpec{Bootstrap: tt.bootstrap},
 			}
+			m := &Machine{machine}
 			if tt.expectErr {
 				warnings, err := m.ValidateCreate()
 				g.Expect(err).To(HaveOccurred())
@@ -101,7 +105,7 @@ func TestMachineNamespaceValidation(t *testing.T) {
 	tests := []struct {
 		name      string
 		expectErr bool
-		bootstrap Bootstrap
+		bootstrap capiv1beta1.Bootstrap
 		infraRef  corev1.ObjectReference
 		namespace string
 	}{
@@ -109,28 +113,28 @@ func TestMachineNamespaceValidation(t *testing.T) {
 			name:      "should succeed if all namespaces match",
 			expectErr: false,
 			namespace: "foobar",
-			bootstrap: Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar"}},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar"}},
 			infraRef:  corev1.ObjectReference{Namespace: "foobar"},
 		},
 		{
 			name:      "should return error if namespace and bootstrap namespace don't match",
 			expectErr: true,
 			namespace: "foobar",
-			bootstrap: Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar123"}},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar123"}},
 			infraRef:  corev1.ObjectReference{Namespace: "foobar"},
 		},
 		{
 			name:      "should return error if namespace and infrastructure ref namespace don't match",
 			expectErr: true,
 			namespace: "foobar",
-			bootstrap: Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar"}},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar"}},
 			infraRef:  corev1.ObjectReference{Namespace: "foobar123"},
 		},
 		{
 			name:      "should return error if no namespaces match",
 			expectErr: true,
 			namespace: "foobar1",
-			bootstrap: Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar2"}},
+			bootstrap: capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{Namespace: "foobar2"}},
 			infraRef:  corev1.ObjectReference{Namespace: "foobar3"},
 		},
 	}
@@ -139,10 +143,11 @@ func TestMachineNamespaceValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			m := &Machine{
+			machine := &capiv1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{Namespace: tt.namespace},
-				Spec:       MachineSpec{Bootstrap: tt.bootstrap, InfrastructureRef: tt.infraRef},
+				Spec:       capiv1beta1.MachineSpec{Bootstrap: tt.bootstrap, InfrastructureRef: tt.infraRef},
 			}
+			m := &Machine{machine}
 
 			if tt.expectErr {
 				warnings, err := m.ValidateCreate()
@@ -188,20 +193,20 @@ func TestMachineClusterNameImmutable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			newMachine := &Machine{
-				Spec: MachineSpec{
+			newMachine := &capiv1beta1.Machine{
+				Spec: capiv1beta1.MachineSpec{
 					ClusterName: tt.newClusterName,
-					Bootstrap:   Bootstrap{ConfigRef: &corev1.ObjectReference{}},
+					Bootstrap:   capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{}},
 				},
 			}
-			oldMachine := &Machine{
-				Spec: MachineSpec{
+			oldMachine := &capiv1beta1.Machine{
+				Spec: capiv1beta1.MachineSpec{
 					ClusterName: tt.oldClusterName,
-					Bootstrap:   Bootstrap{ConfigRef: &corev1.ObjectReference{}},
+					Bootstrap:   capiv1beta1.Bootstrap{ConfigRef: &corev1.ObjectReference{}},
 				},
 			}
 
-			warnings, err := newMachine.ValidateUpdate(oldMachine)
+			warnings, err := (&Machine{newMachine}).ValidateUpdate(&Machine{oldMachine})
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(warnings).To(BeEmpty())
@@ -216,12 +221,12 @@ func TestMachineClusterNameImmutable(t *testing.T) {
 func TestIsMachinePoolMachine(t *testing.T) {
 	tests := []struct {
 		name    string
-		machine Machine
+		machine capiv1beta1.Machine
 		isMPM   bool
 	}{
 		{
 			name: "machine is a MachinePoolMachine",
-			machine: Machine{
+			machine: capiv1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: []metav1.OwnerReference{
 						{
@@ -234,7 +239,7 @@ func TestIsMachinePoolMachine(t *testing.T) {
 		},
 		{
 			name: "machine is not a MachinePoolMachine",
-			machine: Machine{
+			machine: capiv1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: []metav1.OwnerReference{
 						{
@@ -247,7 +252,7 @@ func TestIsMachinePoolMachine(t *testing.T) {
 		},
 		{
 			name: "machine is not a MachinePoolMachine, no owner references",
-			machine: Machine{
+			machine: capiv1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					OwnerReferences: nil,
 				},
@@ -260,7 +265,7 @@ func TestIsMachinePoolMachine(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			result := isMachinePoolMachine(&tt.machine)
+			result := isMachinePoolMachine(&Machine{&tt.machine})
 			g.Expect(result).To(Equal(tt.isMPM))
 		})
 	}
@@ -303,12 +308,13 @@ func TestMachineVersionValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			m := &Machine{
-				Spec: MachineSpec{
+			machine := &capiv1beta1.Machine{
+				Spec: capiv1beta1.MachineSpec{
 					Version:   &tt.version,
-					Bootstrap: Bootstrap{ConfigRef: nil, DataSecretName: pointer.String("test")},
+					Bootstrap: capiv1beta1.Bootstrap{ConfigRef: nil, DataSecretName: pointer.String("test")},
 				},
 			}
+			m := &Machine{machine}
 
 			if tt.expectErr {
 				warnings, err := m.ValidateCreate()

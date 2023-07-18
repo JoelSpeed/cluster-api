@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package webhooks
 
 import (
 	"fmt"
@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -39,7 +40,7 @@ var (
 	// Minimum time allowed for a node to start up.
 	minNodeStartupTimeout = metav1.Duration{Duration: 30 * time.Second}
 	// We allow users to disable the nodeStartupTimeout by setting the duration to 0.
-	disabledNodeStartupTimeout = ZeroDuration
+	disabledNodeStartupTimeout = clusterv1.ZeroDuration
 )
 
 // SetMinNodeStartupTimeout allows users to optionally set a custom timeout
@@ -49,6 +50,14 @@ var (
 // never be used in a production environment.
 func SetMinNodeStartupTimeout(d metav1.Duration) {
 	minNodeStartupTimeout = d
+}
+
+type MachineHealthCheck struct {
+	*clusterv1.MachineHealthCheck
+}
+
+func (m MachineHealthCheck) DeepCopyObject() runtime.Object {
+	return &MachineHealthCheck{m.MachineHealthCheck.DeepCopy()}
 }
 
 func (m *MachineHealthCheck) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -68,7 +77,7 @@ func (m *MachineHealthCheck) Default() {
 	if m.Labels == nil {
 		m.Labels = make(map[string]string)
 	}
-	m.Labels[ClusterNameLabel] = m.Spec.ClusterName
+	m.Labels[clusterv1.ClusterNameLabel] = m.Spec.ClusterName
 
 	if m.Spec.MaxUnhealthy == nil {
 		defaultMaxUnhealthy := intstr.FromString("100%")
@@ -124,7 +133,7 @@ func (m *MachineHealthCheck) validate(old *MachineHealthCheck) error {
 		)
 	}
 
-	if clusterName, ok := m.Spec.Selector.MatchLabels[ClusterNameLabel]; ok && clusterName != m.Spec.ClusterName {
+	if clusterName, ok := m.Spec.Selector.MatchLabels[clusterv1.ClusterNameLabel]; ok && clusterName != m.Spec.ClusterName {
 		allErrs = append(
 			allErrs,
 			field.Invalid(specPath.Child("selector"), m.Spec.Selector, "cannot specify a cluster selector other than the one specified by ClusterName"))
@@ -142,7 +151,7 @@ func (m *MachineHealthCheck) validate(old *MachineHealthCheck) error {
 	if len(allErrs) == 0 {
 		return nil
 	}
-	return apierrors.NewInvalid(GroupVersion.WithKind("MachineHealthCheck").GroupKind(), m.Name, allErrs)
+	return apierrors.NewInvalid(clusterv1.GroupVersion.WithKind("MachineHealthCheck").GroupKind(), m.Name, allErrs)
 }
 
 // ValidateCommonFields validates UnhealthyConditions NodeStartupTimeout, MaxUnhealthy, and RemediationTemplate of the MHC.

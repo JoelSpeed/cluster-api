@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package webhooks
 
 import (
 	"fmt"
@@ -29,14 +29,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/version"
 )
+
+type Machine struct {
+	*clusterv1.Machine
+}
+
+func (m Machine) DeepCopyObject() runtime.Object {
+	return &Machine{m.Machine.DeepCopy()}
+}
 
 const defaultNodeDeletionTimeout = 10 * time.Second
 
 func (m *Machine) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
-		For(m).
+		For(m.Machine).
 		Complete()
 }
 
@@ -51,7 +60,7 @@ func (m *Machine) Default() {
 	if m.Labels == nil {
 		m.Labels = make(map[string]string)
 	}
-	m.Labels[ClusterNameLabel] = m.Spec.ClusterName
+	m.Labels[clusterv1.ClusterNameLabel] = m.Spec.ClusterName
 
 	if m.Spec.Bootstrap.ConfigRef != nil && m.Spec.Bootstrap.ConfigRef.Namespace == "" {
 		m.Spec.Bootstrap.ConfigRef.Namespace = m.Namespace
@@ -144,7 +153,7 @@ func (m *Machine) validate(old *Machine) error {
 	if len(allErrs) == 0 {
 		return nil
 	}
-	return apierrors.NewInvalid(GroupVersion.WithKind("Machine").GroupKind(), m.Name, allErrs)
+	return apierrors.NewInvalid(clusterv1.GroupVersion.WithKind("Machine").GroupKind(), m.Name, allErrs)
 }
 
 func isMachinePoolMachine(m *Machine) bool {

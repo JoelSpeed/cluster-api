@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package webhooks
 
 import (
 	"context"
@@ -36,9 +36,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/cluster-api/util/version"
 )
+
+type MachineDeployment struct {
+	*clusterv1.MachineDeployment
+}
+
+func (m MachineDeployment) DeepCopyObject() runtime.Object {
+	return &MachineDeployment{m.MachineDeployment.DeepCopy()}
+}
 
 func (m *MachineDeployment) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	// This registers MachineDeployment as a validating webhook and
@@ -94,7 +103,7 @@ func (webhook *machineDeploymentDefaulter) Default(ctx context.Context, obj runt
 	if m.Labels == nil {
 		m.Labels = make(map[string]string)
 	}
-	m.Labels[ClusterNameLabel] = m.Spec.ClusterName
+	m.Labels[clusterv1.ClusterNameLabel] = m.Spec.ClusterName
 
 	replicas, err := calculateMachineDeploymentReplicas(ctx, oldMD, m, dryRun)
 	if err != nil {
@@ -119,11 +128,11 @@ func (webhook *machineDeploymentDefaulter) Default(ctx context.Context, obj runt
 	}
 
 	if m.Spec.Strategy == nil {
-		m.Spec.Strategy = &MachineDeploymentStrategy{}
+		m.Spec.Strategy = &clusterv1.MachineDeploymentStrategy{}
 	}
 
 	if m.Spec.Strategy.Type == "" {
-		m.Spec.Strategy.Type = RollingUpdateMachineDeploymentStrategyType
+		m.Spec.Strategy.Type = clusterv1.RollingUpdateMachineDeploymentStrategyType
 	}
 
 	if m.Spec.Template.Labels == nil {
@@ -131,9 +140,9 @@ func (webhook *machineDeploymentDefaulter) Default(ctx context.Context, obj runt
 	}
 
 	// Default RollingUpdate strategy only if strategy type is RollingUpdate.
-	if m.Spec.Strategy.Type == RollingUpdateMachineDeploymentStrategyType {
+	if m.Spec.Strategy.Type == clusterv1.RollingUpdateMachineDeploymentStrategyType {
 		if m.Spec.Strategy.RollingUpdate == nil {
-			m.Spec.Strategy.RollingUpdate = &MachineRollingUpdateDeployment{}
+			m.Spec.Strategy.RollingUpdate = &clusterv1.MachineRollingUpdateDeployment{}
 		}
 		if m.Spec.Strategy.RollingUpdate.MaxSurge == nil {
 			ios1 := intstr.FromInt(1)
@@ -148,12 +157,12 @@ func (webhook *machineDeploymentDefaulter) Default(ctx context.Context, obj runt
 	// If no selector has been provided, add label and selector for the
 	// MachineDeployment's name as a default way of providing uniqueness.
 	if len(m.Spec.Selector.MatchLabels) == 0 && len(m.Spec.Selector.MatchExpressions) == 0 {
-		m.Spec.Selector.MatchLabels[MachineDeploymentNameLabel] = m.Name
-		m.Spec.Template.Labels[MachineDeploymentNameLabel] = m.Name
+		m.Spec.Selector.MatchLabels[clusterv1.MachineDeploymentNameLabel] = m.Name
+		m.Spec.Template.Labels[clusterv1.MachineDeploymentNameLabel] = m.Name
 	}
 	// Make sure selector and template to be in the same cluster.
-	m.Spec.Selector.MatchLabels[ClusterNameLabel] = m.Spec.ClusterName
-	m.Spec.Template.Labels[ClusterNameLabel] = m.Spec.ClusterName
+	m.Spec.Selector.MatchLabels[clusterv1.ClusterNameLabel] = m.Spec.ClusterName
+	m.Spec.Template.Labels[clusterv1.ClusterNameLabel] = m.Spec.ClusterName
 
 	// tolerate version strings without a "v" prefix: prepend it if it's not there
 	if m.Spec.Template.Spec.Version != nil && !strings.HasPrefix(*m.Spec.Template.Spec.Version, "v") {
@@ -270,7 +279,7 @@ func (m *MachineDeployment) validate(old *MachineDeployment) error {
 		return nil
 	}
 
-	return apierrors.NewInvalid(GroupVersion.WithKind("MachineDeployment").GroupKind(), m.Name, allErrs)
+	return apierrors.NewInvalid(clusterv1.GroupVersion.WithKind("MachineDeployment").GroupKind(), m.Name, allErrs)
 }
 
 // calculateMachineDeploymentReplicas calculates the default value of the replicas field.
@@ -311,23 +320,23 @@ func calculateMachineDeploymentReplicas(ctx context.Context, oldMD *MachineDeplo
 	log := ctrl.LoggerFrom(ctx)
 
 	// If both autoscaler annotations are set, use them to calculate the default value.
-	minSizeString, hasMinSizeAnnotation := newMD.Annotations[AutoscalerMinSizeAnnotation]
-	maxSizeString, hasMaxSizeAnnotation := newMD.Annotations[AutoscalerMaxSizeAnnotation]
+	minSizeString, hasMinSizeAnnotation := newMD.Annotations[clusterv1.AutoscalerMinSizeAnnotation]
+	maxSizeString, hasMaxSizeAnnotation := newMD.Annotations[clusterv1.AutoscalerMaxSizeAnnotation]
 	if hasMinSizeAnnotation && hasMaxSizeAnnotation {
 		minSize, err := strconv.ParseInt(minSizeString, 10, 32)
 		if err != nil {
-			return 0, errors.Wrapf(err, "failed to caculate MachineDeployment replicas value: could not parse the value of the %q annotation", AutoscalerMinSizeAnnotation)
+			return 0, errors.Wrapf(err, "failed to caculate MachineDeployment replicas value: could not parse the value of the %q annotation", clusterv1.AutoscalerMinSizeAnnotation)
 		}
 		maxSize, err := strconv.ParseInt(maxSizeString, 10, 32)
 		if err != nil {
-			return 0, errors.Wrapf(err, "failed to caculate MachineDeployment replicas value: could not parse the value of the %q annotation", AutoscalerMaxSizeAnnotation)
+			return 0, errors.Wrapf(err, "failed to caculate MachineDeployment replicas value: could not parse the value of the %q annotation", clusterv1.AutoscalerMaxSizeAnnotation)
 		}
 
 		// If it's a new MachineDeployment => Use the min size.
 		// Note: This will result in a scale up to get into the range where autoscaler takes over.
 		if oldMD == nil {
 			if !dryRun {
-				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (MD is a new MD)", minSize, AutoscalerMinSizeAnnotation))
+				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (MD is a new MD)", minSize, clusterv1.AutoscalerMinSizeAnnotation))
 			}
 			return int32(minSize), nil
 		}
@@ -341,21 +350,21 @@ func calculateMachineDeploymentReplicas(ctx context.Context, oldMD *MachineDeplo
 		// We only have this handling to be 100% safe against panics.
 		case oldMD.Spec.Replicas == nil:
 			if !dryRun {
-				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (old MD didn't have replicas set)", minSize, AutoscalerMinSizeAnnotation))
+				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (old MD didn't have replicas set)", minSize, clusterv1.AutoscalerMinSizeAnnotation))
 			}
 			return int32(minSize), nil
 		// If the old MachineDeployment replicas are lower than min size => Use the min size.
 		// Note: This will result in a scale up to get into the range where autoscaler takes over.
 		case *oldMD.Spec.Replicas < int32(minSize):
 			if !dryRun {
-				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (old MD had replicas below min size)", minSize, AutoscalerMinSizeAnnotation))
+				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (old MD had replicas below min size)", minSize, clusterv1.AutoscalerMinSizeAnnotation))
 			}
 			return int32(minSize), nil
 		// If the old MachineDeployment replicas are higher than max size => Use the max size.
 		// Note: This will result in a scale down to get into the range where autoscaler takes over.
 		case *oldMD.Spec.Replicas > int32(maxSize):
 			if !dryRun {
-				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (old MD had replicas above max size)", maxSize, AutoscalerMaxSizeAnnotation))
+				log.V(2).Info(fmt.Sprintf("Replica field has been defaulted to %d based on the %s annotation (old MD had replicas above max size)", maxSize, clusterv1.AutoscalerMaxSizeAnnotation))
 			}
 			return int32(maxSize), nil
 		// If the old MachineDeployment replicas are between min and max size => Keep the current value.
